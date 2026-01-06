@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import ccxt.async_support as ccxt
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 from model import Kronos, KronosTokenizer, KronosPredictor
 
 logging.basicConfig(
@@ -94,9 +95,11 @@ class Bot:
 
         plt.style.use("dark_background")
 
-        plt.figure(figsize=(width_px / pixel_dpi, height_px / pixel_dpi), dpi=pixel_dpi)
+        fig, ax = plt.subplots(
+            figsize=(width_px / pixel_dpi, height_px / pixel_dpi), dpi=pixel_dpi
+        )
 
-        plt.plot(
+        ax.plot(
             history_df["timestamp"],
             history_df["close"],
             label="History",
@@ -106,35 +109,77 @@ class Bot:
         last_history_ts = history_df["timestamp"].iloc[-1]
         last_history_close = history_df["close"].iloc[-1]
 
+        all_pred_values = []
+
         for pdf in pred_df_list:
             combined_pred_ts = [last_history_ts] + pdf.index.tolist()
             combined_pred_val = [last_history_close] + pdf["close"].tolist()
 
-            plt.plot(
+            all_pred_values.extend(pdf["close"].tolist())
+
+            ax.plot(
                 combined_pred_ts,
                 combined_pred_val,
-                label="Prediction",
                 color="#00bce5",
                 linestyle="--",
                 alpha=0.25,
             )
 
+        if all_pred_values:
+            pred_max = np.max(all_pred_values)
+            pred_min = np.min(all_pred_values)
+
+            ax.axhline(y=pred_max, color="#25a750", linestyle="--", alpha=0.8)
+            # 在横线上方添加文字标签
+            ax.text(
+                last_history_ts,
+                pred_max,
+                f" Max: {pred_max:.2f}",
+                color="#25a750",
+                va="bottom",
+                ha="left",
+                fontsize=12,
+                fontweight="bold",
+            )
+
+            # 绘制最低价横线 (红色虚线)
+            ax.axhline(y=pred_min, color="#ca3f64", linestyle="--", alpha=0.8)
+            # 在横线下方添加文字标签
+            ax.text(
+                last_history_ts,
+                pred_min,
+                f" Min: {pred_min:.2f}",
+                color="#ca3f64",
+                va="top",
+                ha="left",
+                fontsize=12,
+                fontweight="bold",
+            )
+
         if kalman_series is not None:
             kf_ts = [last_history_ts] + pred_df_list[0].index.tolist()
             kf_val = [last_history_close] + kalman_series.tolist()
-            plt.plot(
+            ax.plot(
                 kf_ts,
                 kf_val,
                 label="Kalman Consensus",
                 color="#00bce5",
             )
 
-        plt.ylabel("Close")
-        plt.title(f"{self.bot['symbol']} {self.bot['timeframe']}")
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
+        locator = mdates.AutoDateLocator()
+        ax.xaxis.set_major_locator(locator)
 
+        formatter = mdates.ConciseDateFormatter(locator)
+        ax.xaxis.set_major_formatter(formatter)
+
+        fig.autofmt_xdate()
+
+        ax.set_ylabel("Close")
+        ax.set_title(f"{self.bot['symbol']} {self.bot['timeframe']}")
+        ax.legend()
+        ax.grid(True, alpha=0.15)
+
+        plt.tight_layout()
         plt.savefig("prediction.png", dpi=pixel_dpi)
         plt.close()
 
@@ -191,7 +236,7 @@ class Bot:
             df_list = []
             x_timestamp_list = []
             y_timestamp_list = []
-            for _ in range(5):
+            for _ in range(22):
                 df_list.append(x_df)
                 x_timestamp_list.append(x_timestamp)
                 y_timestamp_list.append(y_timestamp)
@@ -207,7 +252,7 @@ class Bot:
                 T=self.bot["temperature"],
                 top_p=self.bot["topP"],
                 sample_count=self.bot["sampleCount"],
-                verbose=False,
+                verbose=True,
             )
 
             for pdf in pred_df_list:
@@ -216,8 +261,6 @@ class Bot:
             kalman_series = self.apply_kalman_ensemble(pred_df_list, last_close)
 
             self.plot_prediction(df, pred_df_list, kalman_series)
-
-            await asyncio.sleep(5)
 
 
 async def main():
