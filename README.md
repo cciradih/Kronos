@@ -1,6 +1,5 @@
 # Ish QT 📈
 [![Python Version](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
-
 [![Framework](https://img.shields.io/badge/Based%20on-Kronos-orange)](https://github.com/shiyu-coder/Kronos)
 
 **Ish QT** 是一款基于 **Kronos** 时间序列大模型的智能化量化交易程序。它结合了深度学习（Transformer）、统计学滤波与经典技术指标，旨在通过 AI 预测与严谨的数学模型捕捉市场趋势，并实现自动化交易管理。
@@ -136,4 +135,4 @@ python main.py --production
 *   在实盘交易前，请务必在模拟盘（Sandbox）进行充分测试。
 
 ---
-*Powered by [Ish](https://github.com/shiyu-coder/Ish-QT) & [Kronos Model](https://github.com/shiyu-coder/Kronos)*
+*Powered by [Ish](https://github.com/cciradih/Ish-QT) & [Kronos Model](https://github.com/shiyu-coder/Kronos)*
