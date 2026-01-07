@@ -1,18 +1,38 @@
 import sys
 import json
+import time
+import aiohttp
 import asyncio
 import logging
 import numpy as np
 import pandas as pd
+import pandas_ta as ta
 import ccxt.async_support as ccxt
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+from datetime import datetime, timedelta
 from model import Kronos, KronosTokenizer, KronosPredictor
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+class Messenger:
+    @staticmethod
+    async def send_feishu(msg, feishu_url):
+        logger.info(msg)
+        if len(feishu_url) == 0:
+            return
+        payload = {"msg_type": "text", "content": {"text": msg}}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(feishu_url, json=payload, timeout=5) as resp:
+                    if resp.status != 200:
+                        logger.error(f"send_feishu: {resp.status}")
+        except Exception as e:
+            logger.error(f"send_feishu: {e}")
 
 
 class KalmanFilter:
@@ -90,7 +110,16 @@ class Bot:
         ts_index = pd.date_range(start=start_ts, periods=count + 1, freq=freq)[1:]
         return pd.Series(ts_index)
 
-    def plot_prediction(self, history_df, pred_df_list, kalman_series):
+    async def plot_prediction(
+        self,
+        history_df,
+        pred_df_list,
+        kalman_series,
+        angle,
+        poc_price,
+        high_atr,
+        low_atr,
+    ):
         width_px, height_px = 1920, 1080
         pixel_dpi = 100
 
@@ -103,20 +132,15 @@ class Bot:
         ax.plot(
             history_df["timestamp"],
             history_df["close"],
-            label="History",
             color="#d500f9",
         )
 
         last_history_ts = history_df["timestamp"].iloc[-1]
         last_history_close = history_df["close"].iloc[-1]
 
-        all_pred_values = []
-
         for pdf in pred_df_list:
             combined_pred_ts = [last_history_ts] + pdf.index.tolist()
             combined_pred_val = [last_history_close] + pdf["close"].tolist()
-
-            all_pred_values.extend(pdf["close"].tolist())
 
             ax.plot(
                 combined_pred_ts,
@@ -126,43 +150,46 @@ class Bot:
                 alpha=0.25,
             )
 
-        if all_pred_values:
-            pred_max = np.max(all_pred_values)
-            pred_min = np.min(all_pred_values)
+        kf_ts = [last_history_ts] + pred_df_list[0].index.tolist()
+        kf_val = [last_history_close] + kalman_series.tolist()
+        ax.plot(
+            kf_ts,
+            kf_val,
+            color="#00bce5",
+        )
 
-            ax.axhline(y=pred_max, color="#25a750", linestyle="--", alpha=0.8)
-            ax.text(
-                last_history_ts,
-                pred_max,
-                f" Max: {pred_max:.2f}",
-                color="#25a750",
-                va="bottom",
-                ha="left",
-                fontsize=12,
-                fontweight="bold",
-            )
+        ax.axhline(y=poc_price, color="#DBDBDB", linestyle="--", alpha=0.8)
+        ax.text(
+            last_history_ts,
+            poc_price,
+            f"poc: {poc_price:.2f}",
+            color="#DBDBDB",
+            va="bottom",
+            ha="right",
+            fontsize=12,
+        )
 
-            ax.axhline(y=pred_min, color="#ca3f64", linestyle="--", alpha=0.8)
-            ax.text(
-                last_history_ts,
-                pred_min,
-                f" Min: {pred_min:.2f}",
-                color="#ca3f64",
-                va="top",
-                ha="left",
-                fontsize=12,
-                fontweight="bold",
-            )
+        ax.axhline(y=high_atr, color="#25a750", linestyle="--", alpha=0.8)
+        ax.text(
+            last_history_ts,
+            high_atr,
+            f"high_atr: {high_atr:.2f}",
+            color="#25a750",
+            va="bottom",
+            ha="right",
+            fontsize=12,
+        )
 
-        if kalman_series is not None:
-            kf_ts = [last_history_ts] + pred_df_list[0].index.tolist()
-            kf_val = [last_history_close] + kalman_series.tolist()
-            ax.plot(
-                kf_ts,
-                kf_val,
-                label="Kalman Consensus",
-                color="#00bce5",
-            )
+        ax.axhline(y=low_atr, color="#ca3f64", linestyle="--", alpha=0.8)
+        ax.text(
+            last_history_ts,
+            low_atr,
+            f"low_atr: {low_atr:.2f}",
+            color="#ca3f64",
+            va="bottom",
+            ha="right",
+            fontsize=12,
+        )
 
         locator = mdates.AutoDateLocator()
         ax.xaxis.set_major_locator(locator)
@@ -172,14 +199,17 @@ class Bot:
 
         fig.autofmt_xdate()
 
+        msg = f"{self.bot['symbol']} {self.bot['timeframe']} {angle:.2f} {poc_price:.2f} {high_atr:.2f} {low_atr:.2f}"
+
         ax.set_ylabel("Close")
-        ax.set_title(f"{self.bot['symbol']} {self.bot['timeframe']}")
-        ax.legend()
+        ax.set_title(msg)
         ax.grid(True, alpha=0.15)
 
         plt.tight_layout()
         plt.savefig("prediction.png", dpi=pixel_dpi)
         plt.close()
+
+        await Messenger.send_feishu(msg, self.bot["feishuUrl"])
 
     def apply_kalman_ensemble(self, pred_df_list, initial_price):
         data_matrix = np.zeros((len(pred_df_list[0]), len(pred_df_list)))
@@ -208,60 +238,113 @@ class Bot:
 
         return pd.Series(filtered_results)
 
+    def apply_linear_regression(self, kalman_series):
+        try:
+            y = np.array(kalman_series)
+            y_min = np.min(y)
+            y_max = np.max(y)
+            y_norm = (y - y_min) / (y_max - y_min)
+
+            x = np.arange(len(kalman_series))
+            x_norm = x / len(x)
+
+            slope, _ = np.polyfit(x_norm, y_norm, 1)
+            return np.degrees(np.arctan(slope))
+        except Exception as e:
+            logger.error(f"apply_linear_regression: {e}")
+            return 0.0
+
+    def apply_vp(self, df):
+        try:
+            vp = ta.vp(close=df["close"], volume=df["volume"], width=24)
+            return vp.loc[vp["total_volume"].idxmax()]["mean_close"]
+        except Exception as e:
+            logger.error(f"apply_vp: {e}")
+            return 0.0
+
+    def apply_atr(self, df):
+        try:
+            atr = ta.atr(df["high"], df["low"], df["close"]).iloc[-2]
+            price = df.iloc[-2]["close"]
+            atr_multiplier = self.bot["atrMultiplier"]
+            return price + atr_multiplier * atr, price - atr_multiplier * atr
+        except Exception as e:
+            logger.error(f"apply_atr: {e}")
+            return 0.0, 0.0
+
     async def loop(self):
         self.init()
         while True:
-            ohlcv = await self.fetch_ohlcv()
-            df = pd.DataFrame(
-                ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
+            now = datetime.now()
+            minutes_to_next = 5 - (now.minute % 5)
+            next_run = now.replace(second=0, microsecond=0) + timedelta(
+                minutes=minutes_to_next
             )
-            df = df.drop_duplicates(subset=["timestamp"])
-            df = df.sort_values("timestamp").reset_index(drop=True)
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+            wait_seconds = (next_run - now).total_seconds()
 
-            lookback = 400
-            pred_len = 120
+            try:
+                ohlcv = await self.fetch_ohlcv()
+                df = pd.DataFrame(
+                    ohlcv,
+                    columns=["timestamp", "open", "high", "low", "close", "volume"],
+                )
+                df = df.drop_duplicates(subset=["timestamp"])
+                df = df.sort_values("timestamp").reset_index(drop=True)
+                df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
-            x_df = df.tail(lookback)[["open", "high", "low", "close", "volume"]]
-            x_timestamp = df.tail(lookback)["timestamp"]
+                lookback = 400
+                pred_len = 120
 
-            last_ts = x_timestamp.iloc[-1]
-            last_close = x_df["close"].iloc[-1]
-            y_timestamp = self.generate_future_timestamps(
-                last_ts, pred_len, self.bot["timeframe"]
-            )
+                x_df = df.tail(lookback)[["open", "high", "low", "close", "volume"]]
+                x_timestamp = df.tail(lookback)["timestamp"]
 
-            df_list = []
-            x_timestamp_list = []
-            y_timestamp_list = []
+                last_ts = x_timestamp.iloc[-1]
+                last_close = x_df["close"].iloc[-1]
+                y_timestamp = self.generate_future_timestamps(
+                    last_ts, pred_len, self.bot["timeframe"]
+                )
 
-            for _ in range(self.bot["batch"]):
-                df_list.append(x_df)
-                x_timestamp_list.append(x_timestamp)
-                y_timestamp_list.append(y_timestamp)
+                df_list = []
+                x_timestamp_list = []
+                y_timestamp_list = []
 
-            pred_df_list = self.predictor.predict_batch(
-                df_list=df_list,
-                x_timestamp_list=x_timestamp_list,
-                y_timestamp_list=y_timestamp_list,
-                pred_len=pred_len,
-                T=self.bot["temperature"],
-                top_p=self.bot["topP"],
-                sample_count=self.bot["sampleCount"],
-                verbose=True,
-            )
+                for _ in range(self.bot["batch"]):
+                    df_list.append(x_df)
+                    x_timestamp_list.append(x_timestamp)
+                    y_timestamp_list.append(y_timestamp)
 
-            for pdf in pred_df_list:
-                pdf.index = y_timestamp
+                pred_df_list = self.predictor.predict_batch(
+                    df_list=df_list,
+                    x_timestamp_list=x_timestamp_list,
+                    y_timestamp_list=y_timestamp_list,
+                    pred_len=pred_len,
+                    T=self.bot["temperature"],
+                    top_p=self.bot["topP"],
+                    sample_count=self.bot["sampleCount"],
+                    verbose=True,
+                )
 
-            kalman_series = self.apply_kalman_ensemble(pred_df_list, last_close)
+                for pdf in pred_df_list:
+                    pdf.index = y_timestamp
 
-            self.plot_prediction(df, pred_df_list, kalman_series)
-            return
+                kalman_series = self.apply_kalman_ensemble(pred_df_list, last_close)
+
+                angle = self.apply_linear_regression(kalman_series)
+
+                poc_price = self.apply_vp(df)
+                high_atr, low_atr = self.apply_atr(df)
+
+                await self.plot_prediction(
+                    df, pred_df_list, kalman_series, angle, poc_price, high_atr, low_atr
+                )
+
+                await asyncio.sleep(wait_seconds)
+            except Exception as e:
+                logger.error(f"loop: {e}")
 
 
 async def main():
-    config_file = ".env" if "--production" in sys.argv else ".env.local"
+    config_file = ".config.json" if "--production" in sys.argv else ".config.local.json"
     try:
         with open(config_file, "r") as f:
             config = json.load(f)

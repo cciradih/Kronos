@@ -3,5 +3,6 @@ einops==0.8.1
 huggingface_hub==1.2.4
 matplotlib==3.10.8
 pandas==2.3.3
+pandas-ta==0.4.71b0
 safetensors==0.7.0
 tqdm==4.67.1

@@ -17,7 +17,8 @@
         "temperature": 1.2,
         "topP": 0.95,
         "sampleCount": 2,
-        "batch": 22
-    },
-    "feishuUrl": ""
+        "batch": 22,
+        "feishuUrl": "",
+        "atrMultiplier": 1.5
+    }
 }

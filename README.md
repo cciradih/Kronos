@@ -2,7 +2,7 @@
 基于 [Kronos](https://github.com/shiyu-coder/Kronos) 的量化交易程序。
 
 ## 配置
-将配置文件模板 `copy.env.local` 重命名为 `.env.local` （模拟交易）和 `.env`（实盘交易）。
+将配置文件模板 `copy.config.json` 重命名为 `.config.local.json` （模拟交易）和 `.config.json`（实盘交易）。
 
 ```json
 {
@@ -23,7 +23,7 @@
         // 市场。
         "symbol": "DOGE/USDT:USDT",
         // 周期。
-        "timeframe": "1h",
+        "timeframe": "1m",
         // 推荐 1.2-1.5。
         "temperature": 1.2,
         // 推荐 0.95-1.0。
@@ -32,10 +32,12 @@
         "sampleCount": 2,
         // 批量预测的数量，越多越好。
         // 经测试，GTX 1050 Ti 4G 显存最大可支持 15，RTX 4070 8G 显存最大可支持 22。
-        "batch": 22
-    },
-    // 发送通知到飞书群聊机器人的 Webhook 地址。
-    "feishuUrl": ""
+        "batch": 22,
+        // 发送通知到飞书群聊机器人的 Webhook 地址。
+        "feishuUrl": "",
+        // ATR 倍率。
+        "atrMultiplier": 1.5
+    }
 }
 ```
 
