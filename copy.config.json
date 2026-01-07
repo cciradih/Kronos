@@ -14,11 +14,12 @@
     "bot": {
         "symbol": "SOL/USDT:USDT",
         "timeframe": "5m",
+        "predictionLength": 24,
         "temperature": 1.2,
         "topP": 0.95,
         "sampleCount": 2,
-        "batch": 22,
+        "batch": 40,
         "feishuUrl": "",
-        "atrMultiplier": 1.5
+        "atrMultiplier": 2.5
     }
 }

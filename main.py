@@ -87,7 +87,7 @@ class Bot:
                     self.bot["symbol"],
                     self.bot["timeframe"],
                     since=since,
-                    limit=200,
+                    limit=285,
                 )
             except Exception as e:
                 logger.error(f"fetch_ohlcv: {e}")
@@ -292,8 +292,8 @@ class Bot:
                 df = df.sort_values("timestamp").reset_index(drop=True)
                 df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
-                lookback = 400
-                pred_len = 120
+                lookback = 570
+                pred_len = self.bot["predictionLength"]
 
                 x_df = df.tail(lookback)[["open", "high", "low", "close", "volume"]]
                 x_timestamp = df.tail(lookback)["timestamp"]
