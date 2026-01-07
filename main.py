@@ -1,3 +1,4 @@
+import sys
 import json
 import asyncio
 import logging
@@ -130,7 +131,6 @@ class Bot:
             pred_min = np.min(all_pred_values)
 
             ax.axhline(y=pred_max, color="#25a750", linestyle="--", alpha=0.8)
-            # 在横线上方添加文字标签
             ax.text(
                 last_history_ts,
                 pred_max,
@@ -142,9 +142,7 @@ class Bot:
                 fontweight="bold",
             )
 
-            # 绘制最低价横线 (红色虚线)
             ax.axhline(y=pred_min, color="#ca3f64", linestyle="--", alpha=0.8)
-            # 在横线下方添加文字标签
             ax.text(
                 last_history_ts,
                 pred_min,
@@ -236,14 +234,12 @@ class Bot:
             df_list = []
             x_timestamp_list = []
             y_timestamp_list = []
-            for _ in range(22):
+
+            for _ in range(self.bot["batch"]):
                 df_list.append(x_df)
                 x_timestamp_list.append(x_timestamp)
                 y_timestamp_list.append(y_timestamp)
 
-            # temperature   1.2-1.5
-            # topP          0.95-1.0
-            # sampleCount   2-3
             pred_df_list = self.predictor.predict_batch(
                 df_list=df_list,
                 x_timestamp_list=x_timestamp_list,
@@ -261,11 +257,13 @@ class Bot:
             kalman_series = self.apply_kalman_ensemble(pred_df_list, last_close)
 
             self.plot_prediction(df, pred_df_list, kalman_series)
+            return
 
 
 async def main():
+    config_file = ".env" if "--production" in sys.argv else ".env.local"
     try:
-        with open(".env", "r") as f:
+        with open(config_file, "r") as f:
             config = json.load(f)
             bot = Bot(config)
             await bot.loop()
