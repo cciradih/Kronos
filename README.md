@@ -103,7 +103,7 @@ python main.py --production
 ## 📈 策略分析说明
 程序运行后会生成预测图表 `prediction.png`：
 
-![prediction.png]
+![prediction.png](https://github.com/cciradih/Ish-QT/blob/master/prediction.png?raw=true)
 
 ### 图表元素对照表
 | 元素 | 说明 |
